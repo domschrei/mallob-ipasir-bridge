@@ -1,2 +1,21 @@
 # mallob-ipasir-bridge
 An IPASIR interface to connect applications to Mallob's incremental on-demand SAT solving
+
+## Building
+
+Execute `make`. This produces the library `libipasirmallob.a` which provides all IPASIR functions as defined in `src/ipasir.h`.
+By default, the interface will use `.api/jobs.0/` as a location of Mallob's JSON API directory (relative to the path from where the application is executed!). This can be changed at build time by supplying different values for `MALLOB_BASE_DIRECTORY` and/or `MALLOB_API_INDEX` as follows:
+```
+make MALLOB_BASE_DIRECTORY='"path/to/my/mallob"' MALLOB_API_INDEX='"5"'
+```
+This would let the interface use `path/to/my/mallob/.api/jobs.5/` as the API directory.
+
+## Usage
+
+Mallob must run in the background in order to use this interface.
+For each call to `solve()`, this IPASIR bridge creates a JSON request file and puts it into the `new/` subdirectory of the API directory and awaits an answer in the `done/` subdirectory.
+
+## ToDos
+
+* The termination method is not functional yet because Mallob does not yet support arbitrary interruption of a certain incremental job "from the outside".
+* No clauses are reported even if a callback is supplied: Mallob does not export clauses to the outside (yet).
