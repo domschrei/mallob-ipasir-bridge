@@ -17,5 +17,6 @@ For each call to `solve()`, this IPASIR bridge creates a JSON request file and p
 
 ## ToDos
 
+* Mallob's support for incremental SAT is not fully functional yet, so the version of Mallob with incremental SAT still resides on a separate "incremental" branch.
 * The termination method is not functional yet because Mallob does not yet support arbitrary interruption of a certain incremental job "from the outside".
 * No clauses are reported even if a callback is supplied: Mallob does not export clauses to the outside (yet).
