@@ -112,7 +112,7 @@ void MallobIpasir::destruct() {
         {"done", true}
     };
     if (_revision > 0) {
-        j["precursor"] = getJobName(_revision-1);
+        j["precursor"] = "ipasir." + getJobName(_revision-1);
     }
     std::string jsonFilename = _api_directory + "/new/ipasir." + jobName + ".json";
     std::ofstream o(jsonFilename);
