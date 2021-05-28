@@ -10,6 +10,9 @@ make MALLOB_BASE_DIRECTORY='"path/to/my/mallob"' MALLOB_API_INDEX='"5"'
 ```
 This would let the interface use `path/to/my/mallob/.api/jobs.5/` as the API directory.
 
+Now you can link IPASIR applications with the library file `libipasirmallob.a` to obtain an application which uses Mallob as a backend SAT solver.
+For more information on linking IPASIR applications with IPASIR solvers, see [the IPASIR Github repository](https://github.com/biotomas/ipasir).
+
 ## Usage
 
 Mallob must run in the background in order to use this interface.
