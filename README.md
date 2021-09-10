@@ -1,4 +1,4 @@
-# mallob-ipasir-bridge
+# Mallob IPASIR Bridge
 An IPASIR interface to connect applications to Mallob's incremental on-demand SAT solving
 
 ## Building
@@ -17,6 +17,9 @@ For more information on linking IPASIR applications with IPASIR solvers, see [th
 
 Mallob must run in the background in order to use this interface.
 For each call to `solve()`, this IPASIR bridge creates a JSON request file and puts it into the `new/` subdirectory of the API directory and awaits an answer in the `done/` subdirectory.
+
+For correct functionality, it is essential that your application properly calls `ipasir_release` for each IPASIR instance it created.
+Otherwise, stale job nodes that are reserved for the dead job may accumulate and eventually clog the entire system. 
 
 ## ToDos
 
