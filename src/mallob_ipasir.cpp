@@ -3,10 +3,18 @@
 #include <iomanip>
 #include <functional>
 #include <iostream>
+#include <atomic>
 
 #include "json.hpp"
 #include "ipasir.h"
 #include "mallob_ipasir.hpp"
+
+// Global variable to enumerate several distinct IPASIR instances
+std::atomic_int ipasirSolverIndex = 0;
+
+MallobIpasir::MallobIpasir() :
+        _api_directory(MALLOB_BASE_DIRECTORY + std::string("/.api/jobs.") + MALLOB_API_INDEX + std::string("/")),
+        _solver_id(ipasirSolverIndex++) {}
 
 int MallobIpasir::solve() {
 
@@ -14,7 +22,9 @@ int MallobIpasir::solve() {
     _failed_assumptions.clear();
 
     // Write formula
-    std::string formulaFilename = "/tmp/ipasir_mallob_" + std::to_string(getpid()) + ".cnf";
+    std::string formulaFilename = "/tmp/ipasir_mallob_" 
+        + std::to_string(getpid()) + "_" 
+        + std::to_string(_solver_id) + ".cnf";
     std::cout << "Writing " << _num_cls << " clauses and " << _assumptions.size() 
         << " assumptions to " << formulaFilename << std::endl;
     std::ofstream fOut(formulaFilename);

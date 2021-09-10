@@ -19,13 +19,13 @@ class MallobIpasir {
 
 private:
     std::string _api_directory;
-    pid_t _pid;
+    int _solver_id;
 
     std::vector<int> _formula;
     std::vector<int> _assumptions;
-    int _num_vars;
-    int _num_cls;
-    int _revision;
+    int _num_vars = 0;
+    int _num_cls = 0;
+    int _revision = 0;
 
     int (*_terminate_callback) (void*) = nullptr;
     void* _terminate_data;
@@ -34,11 +34,7 @@ private:
     std::set<int> _failed_assumptions;
 
 public:
-    MallobIpasir() :
-        _api_directory(MALLOB_BASE_DIRECTORY + std::string("/.api/jobs.") + MALLOB_API_INDEX + std::string("/")),
-        _num_vars(0),
-        _num_cls(0),
-        _revision(0) {}
+    MallobIpasir();
     
     void addLiteral(int lit) {
         _formula.push_back(lit);
@@ -68,7 +64,9 @@ public:
         _terminate_data = data;
     }
     std::string getJobName(int revision) {
-        return "job-" + std::to_string(getpid()) + "-" + std::to_string(revision);
+        return "job-" + std::to_string(getpid()) 
+            + "_" + std::to_string(_solver_id) 
+            + "-" + std::to_string(revision);
     }
 };
 
