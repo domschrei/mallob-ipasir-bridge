@@ -67,7 +67,7 @@ int MallobIpasir::solve() {
     while (true) {
         usleep(1000 * 10); // 10 milliseconds
 
-        if (_terminate_callback(_terminate_data)) {
+        if (_terminate_callback != nullptr && _terminate_callback(_terminate_data)) {
             // Terminate catched!
             // TODO cause Mallob to stop this iteration
             break;
