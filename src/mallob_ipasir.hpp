@@ -6,6 +6,7 @@
 #include <vector>
 #include <set>
 #include <unistd.h>
+#include <thread>
 
 #ifndef MALLOB_BASE_DIRECTORY
 #define MALLOB_BASE_DIRECTORY "."
@@ -20,6 +21,7 @@ class MallobIpasir {
 private:
     std::string _api_directory;
     int _solver_id;
+    bool _incremental = true;
 
     std::vector<int> _formula;
     std::vector<int> _assumptions;
@@ -33,8 +35,11 @@ private:
     std::vector<int> _model;
     std::set<int> _failed_assumptions;
 
+    std::vector<std::thread> _branched_threads;
+
 public:
     MallobIpasir();
+    MallobIpasir(bool incremental);
     
     void addLiteral(int lit) {
         _formula.push_back(lit);
@@ -50,6 +55,8 @@ public:
     }
 
     int solve();
+
+    void branchedSolve(void * data, int (*terminate)(void* data), void (*callbackAtFinish)(int result, void* solver, void* data));
 
     void destruct();
 

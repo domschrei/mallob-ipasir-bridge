@@ -16,6 +16,10 @@ MallobIpasir::MallobIpasir() :
         _api_directory(MALLOB_BASE_DIRECTORY + std::string("/.api/jobs.") + MALLOB_API_INDEX + std::string("/")),
         _solver_id(ipasirSolverIndex++) {}
 
+MallobIpasir::MallobIpasir(bool incremental) :
+        _api_directory(MALLOB_BASE_DIRECTORY + std::string("/.api/jobs.") + MALLOB_API_INDEX + std::string("/")),
+        _solver_id(ipasirSolverIndex++), _incremental(incremental) {}
+
 int MallobIpasir::solve() {
 
     _model.clear();
@@ -24,21 +28,29 @@ int MallobIpasir::solve() {
     // Write formula
     std::string formulaFilename = "/tmp/ipasir_mallob_" 
         + std::to_string(getpid()) + "_" 
-        + std::to_string(_solver_id) + ".cnf";
+        + std::to_string(_solver_id) + "_" + std::to_string(_revision) + ".cnf";
     std::cout << "Writing " << _num_cls << " clauses and " << _assumptions.size() 
         << " assumptions to " << formulaFilename << std::endl;
     std::ofstream fOut(formulaFilename);
-    fOut << "p cnf " << _num_vars << " " << _num_cls << "\n";
+
+    int numCls = _num_cls + (_incremental ? 0 : _assumptions.size());
+    fOut << "p cnf " << _num_vars << " " << numCls << "\n";
     for (int lit : _formula) {
         if (lit == 0) fOut << "0\n";
         else fOut << lit << " ";
     }
     if (!_assumptions.empty()) {
-        fOut << "a ";
-        for (int lit : _assumptions) {
-            fOut << lit << " ";
+        if (_incremental) {
+            fOut << "a ";
+            for (int lit : _assumptions) {
+                fOut << lit << " ";
+            }
+            fOut << "0\n";
+        } else {
+            for (int lit : _assumptions) {
+                fOut << lit << " 0\n";
+            }
         }
-        fOut << "0\n";
     }
     fOut.close();
 
@@ -51,9 +63,9 @@ int MallobIpasir::solve() {
         {"priority", 1.000}, 
         {"wallclock-limit", "0"}, 
         {"cpu-limit", "0"}, 
-        {"incremental", true}
+        {"incremental", _incremental}
     };
-    if (_revision > 0) {
+    if (_incremental && _revision > 0) {
         j["precursor"] = "ipasir." + getJobName(_revision-1);
     }
     std::string jsonFilename = _api_directory + "/new/ipasir." + jobName + ".json";
@@ -100,33 +112,55 @@ int MallobIpasir::solve() {
 
     _revision++;
 
-    _formula.clear();
-    _assumptions.clear();
-    _num_cls = 0;
+    if (_incremental) {
+        _formula.clear();
+        _assumptions.clear();
+        _num_cls = 0;
+    }
 
     return resultcode;
 }
 
+void MallobIpasir::branchedSolve(void * data, int (*terminate)(void * data), void (*callbackAtFinish)(int result, void* solver, void* data)) {
+
+    MallobIpasir* child = new MallobIpasir(/*incremental=*/false);
+    child->_formula = _formula;
+    child->_assumptions = _assumptions;
+    child->_num_vars = _num_vars;
+    child->_num_cls = _num_cls;
+    child->setTerminateCallback(data, terminate);
+
+    _branched_threads.emplace_back([data, child, callbackAtFinish]() {
+        int result = child->solve();
+        callbackAtFinish(result, child, data);
+    });
+
+    _assumptions.clear();
+}
+
 void MallobIpasir::destruct() {
+
+    for (auto& thread : _branched_threads) thread.join();
+
     if (_revision == 0) return;
 
-    // Write a JSON notifying Mallob to destroy the job
-    std::string jobName = getJobName(_revision);
-    nlohmann::json j = { 
-        {"user", "ipasir"}, 
-        {"name", jobName},
-        {"priority", 1.000}, 
-        {"wallclock-limit", "0"}, 
-        {"cpu-limit", "0"}, 
-        {"incremental", true},
-        {"done", true}
-    };
-    if (_revision > 0) {
-        j["precursor"] = "ipasir." + getJobName(_revision-1);
+    if (_incremental) {
+        // Write a JSON notifying Mallob to destroy the job
+        std::string jobName = getJobName(_revision);
+        nlohmann::json j = { 
+            {"user", "ipasir"}, 
+            {"name", jobName},
+            {"priority", 1.000}, 
+            {"wallclock-limit", "0"}, 
+            {"cpu-limit", "0"}, 
+            {"incremental", true},
+            {"done", true},
+            {"precursor", "ipasir." + getJobName(_revision-1)}
+        };
+        std::string jsonFilename = _api_directory + "/new/ipasir." + jobName + ".json";
+        std::ofstream o(jsonFilename);
+        o << std::setw(4) << j << std::endl;
     }
-    std::string jsonFilename = _api_directory + "/new/ipasir." + jobName + ".json";
-    std::ofstream o(jsonFilename);
-    o << std::setw(4) << j << std::endl;
 }
 
 
@@ -147,3 +181,13 @@ void ipasir_set_terminate (void * solver, void * data, int (*terminate)(void * d
 
 // TODO implement?
 void ipasir_set_learn (void * solver, void * data, int max_length, void (*learn)(void * data, int32_t * clause)) {}
+
+// Addition to the interface: enables to create a non-incremental solver which can then be branched
+// via mallob_ipasir_branched_solve ().
+void* mallob_ipasir_init (bool incremental) {return new MallobIpasir(incremental);} 
+
+// Addition to the interface: branch off a child solver on the current formulae / assumptions,
+// call the provided callback as soon as solving is done. Clears assumptions in the parent solver.
+void mallob_ipasir_branched_solve (void * solver, void * data, int (*terminate)(void * data), void (*callback_done)(int result, void* child_solver, void* data)) {
+    get(solver)->branchedSolve(data, terminate, callback_done);
+}

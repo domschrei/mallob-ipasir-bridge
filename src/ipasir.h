@@ -200,6 +200,14 @@ IPASIR_API void ipasir_set_terminate (void * solver, void * data, int (*terminat
  */
 IPASIR_API void ipasir_set_learn (void * solver, void * data, int max_length, void (*learn)(void * data, int32_t * clause));
 
+// Addition to the interface: enables to create a non-incremental solver which can then be branched
+// via mallob_ipasir_branched_solve ().
+void* mallob_ipasir_init (bool incremental);
+
+// Addition to the interface: branch off a child solver on the current formulae / assumptions,
+// call the provided callback as soon as solving is done. Clears assumptions in the parent solver.
+void mallob_ipasir_branched_solve (void * solver, void * data, int (*terminate)(void * data), void (*callback_done)(int result, void* child_solver, void* data));
+
 #ifdef __cplusplus
 } // closing extern "C"
 #endif
