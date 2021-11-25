@@ -75,6 +75,10 @@ public:
             + "_" + std::to_string(_solver_id) 
             + "-" + std::to_string(revision);
     }
+
+private:
+    void writeJson(nlohmann::json& json, const std::string& file);
+
 };
 
 #endif

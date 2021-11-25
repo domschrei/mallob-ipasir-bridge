@@ -59,6 +59,7 @@ int MallobIpasir::solve() {
     nlohmann::json j = { 
         {"user", "ipasir"}, 
         {"name", jobName}, 
+        {"application", "SAT"},
         {"file", formulaFilename}, 
         {"priority", 1.000}, 
         {"wallclock-limit", "0"}, 
@@ -68,21 +69,29 @@ int MallobIpasir::solve() {
     if (_incremental && _revision > 0) {
         j["precursor"] = "ipasir." + getJobName(_revision-1);
     }
-    std::string jsonFilename = _api_directory + "/new/ipasir." + jobName + ".json";
-    std::ofstream o(jsonFilename);
-    o << std::setw(4) << j << std::endl;
-    o.close();
+    writeJson(j, _api_directory + "/new/ipasir." + jobName + ".json");
 
     // Wait for a response
     int resultcode = 0;
     std::string resultFilename = _api_directory + "/done/ipasir." + jobName + ".json";
+    bool hasInterrupted = false;
+
     while (true) {
         usleep(1000 * 10); // 10 milliseconds
 
-        if (_terminate_callback != nullptr && _terminate_callback(_terminate_data)) {
-            // Terminate catched!
-            // TODO cause Mallob to stop this iteration
-            break;
+        if (!hasInterrupted && _terminate_callback != nullptr && _terminate_callback(_terminate_data) != 0) {
+            // Terminate catched! Send interrupt over interface.
+            // Still wait for a normal answer from the job result interface.
+            nlohmann::json jInterrupt = {
+                {"user", "ipasir"},
+                {"name", jobName},
+                {"application", "SAT"},
+                {"incremental", _incremental},
+                {"interrupt", true}
+            };
+            writeJson(jInterrupt, _api_directory + "/new/ipasir." + jobName + ".interrupt.json");
+            // Do not repeat this interrupt even if it takes a while for the job to return.
+            hasInterrupted = true;
         }
 
         // Try to parse result
@@ -150,17 +159,18 @@ void MallobIpasir::destruct() {
         nlohmann::json j = { 
             {"user", "ipasir"}, 
             {"name", jobName},
-            {"priority", 1.000}, 
-            {"wallclock-limit", "0"}, 
-            {"cpu-limit", "0"}, 
-            {"incremental", true},
+            {"application", "SAT"},
+            {"incremental", _incremental},
             {"done", true},
             {"precursor", "ipasir." + getJobName(_revision-1)}
         };
-        std::string jsonFilename = _api_directory + "/new/ipasir." + jobName + ".json";
-        std::ofstream o(jsonFilename);
-        o << std::setw(4) << j << std::endl;
+        writeJson(j, _api_directory + "/new/ipasir." + jobName + ".json");
     }
+}
+
+void MallobIpasir::writeJson(nlohmann::json& json, const std::string& file) {
+    std::ofstream o(file);
+    o << std::setw(4) << json << std::endl;
 }
 
 
