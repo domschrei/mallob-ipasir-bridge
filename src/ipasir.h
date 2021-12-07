@@ -208,6 +208,10 @@ void* mallob_ipasir_init (bool incremental);
 // call the provided callback as soon as solving is done. Clears assumptions in the parent solver.
 void mallob_ipasir_branched_solve (void * solver, void * data, int (*terminate)(void * data), void (*callback_done)(int result, void* child_solver, void* data));
 
+// Addition to the interface: already begin to introduce the next job to Mallob (via ipasir_solve, not branched_solve!).
+// Illegal if the formula transfer mode is not NAMED_PIPE.
+void mallob_ipasir_presubmit (void * solver);
+
 #ifdef __cplusplus
 } // closing extern "C"
 #endif

@@ -7,6 +7,10 @@
 #include <set>
 #include <unistd.h>
 #include <thread>
+#include <mutex>
+#include <condition_variable>
+
+#include "event_poller.hpp"
 
 #ifndef MALLOB_BASE_DIRECTORY
 #define MALLOB_BASE_DIRECTORY "."
@@ -18,7 +22,14 @@
 
 class MallobIpasir {
 
+public:
+    static EventPoller* _event_poller;
+    enum Interface {SOCKET, FILESYSTEM};
+    enum FormulaTransfer {FILE, NAMED_PIPE};
+
 private:
+    Interface _interface;
+    FormulaTransfer _formula_transfer;
     std::string _api_directory;
     int _solver_id;
     bool _incremental = true;
@@ -29,6 +40,13 @@ private:
     int _num_cls = 0;
     int _revision = 0;
 
+    bool _presubmitted = false;
+    int _fd_formula = -1;
+
+    int _fd_inotify = -1;
+    int _fd_inotify_watcher = -1;
+    std::vector<char> _inotify_buffer;
+
     int (*_terminate_callback) (void*) = nullptr;
     void* _terminate_data;
 
@@ -36,13 +54,24 @@ private:
     std::set<int> _failed_assumptions;
 
     std::vector<std::thread> _branched_threads;
+    std::map<std::string, std::pair<std::mutex*, std::condition_variable*>> _branched_signals;
+
+    std::mutex _branch_mutex;
+    std::condition_variable _branch_cond_var;
+
+    int _fd_socket;
 
 public:
-    MallobIpasir();
-    MallobIpasir(bool incremental);
+    MallobIpasir(Interface interface, bool incremental);
     
+    std::string getSignature() const;
+
     void addLiteral(int lit) {
         _formula.push_back(lit);
+        if (_presubmitted && _formula.size() >= 512) {
+            write(_fd_formula, _formula.data(), _formula.size()*sizeof(int));
+            _formula.clear();
+        }
         if (lit == 0) {
             _num_cls++;
         } else {
@@ -70,14 +99,23 @@ public:
         _terminate_callback = terminate;
         _terminate_data = data;
     }
-    std::string getJobName(int revision) {
-        return "job-" + std::to_string(getpid()) 
-            + "_" + std::to_string(_solver_id) 
-            + "-" + std::to_string(revision);
-    }
+
+    void submitJob();
 
 private:
+
+    std::string getJobName(int revision);
+    std::string getFormulaName();
+    
     void writeJson(nlohmann::json& json, const std::string& file);
+    std::optional<nlohmann::json> readJson(const std::string& file);
+    
+    void setupConnection();
+    void sendJson(nlohmann::json& json);
+    std::optional<nlohmann::json> receiveJson();
+
+    void writeFormula(const std::string& file);
+    void pipeFormula(const std::string& pipe);
 
 };
 
