@@ -150,13 +150,7 @@ int MallobIpasir::solve() {
                 _model.clear();
                 _model.resize(solutionSize);
                 std::cout << "Reading solution : " << solutionSize << " ints" << std::endl;
-                int numRead = 0;
-                while (numRead < solutionSize * sizeof(int)) {
-                    int n = read(fd, ((char*)_model.data())+numRead, 
-                        solutionSize*sizeof(int) - numRead);
-                    if (n <= 0) break;
-                    numRead += n;
-                }
+                completeRead(fd, (char*)_model.data(), solutionSize*sizeof(int));
                 std::cout << "Read solution of size " << _model.size() << " ("
                     << _model[0] << "," << _model[1] << ",...," 
                     << _model[_model.size()-2] << "," << _model[_model.size()-1]  
@@ -198,10 +192,6 @@ void MallobIpasir::branchedSolve(void * data, int (*terminate)(void * data), voi
     child->_num_vars = _num_vars;
     child->_num_cls = _num_cls;
     child->setTerminateCallback(data, terminate);
-
-    std::string jobName = child->getJobName(child->_revision);
-    _branched_signals[jobName] = std::pair<std::mutex*, std::condition_variable*>(
-        &child->_branch_mutex, &child->_branch_cond_var);
 
     _branched_threads.emplace_back([data, child, callbackAtFinish]() {
         int result = child->solve();
@@ -351,23 +341,57 @@ void MallobIpasir::writeFormula(const std::string& formulaFilename) {
 void MallobIpasir::pipeFormula(const std::string& pipeFilename) {
     int zero = 0;
 
-    // Write clause literals with separation zeroes
-    write(_fd_formula, _formula.data(), _formula.size()*sizeof(int));
+    std::cout << "Writing " << _num_cls << " clauses (" 
+        << _formula.size() << " lits remaining) and " 
+        << _assumptions.size() << " assumptions to " << pipeFilename << std::endl;
 
-    if (_incremental) {
-        // Incremental mode: 
-        // Write an empty clause to signal assumptions
-        write(_fd_formula, &zero, sizeof(int));
-        // Write assumptions (without any separation zeroes)
-        write(_fd_formula, _assumptions.data(), _assumptions.size()*sizeof(int));
-    } else {
+    // Write (remaining) clause literals with separation zeroes
+    completeWrite(_fd_formula, (char*)_formula.data(), _formula.size()*sizeof(int));
+    if (!_incremental) {
         // Non-incremental mode: write assumptions as unit clauses
         for (int a : _assumptions) {
-            write(_fd_formula, &a, sizeof(int));
-            write(_fd_formula, &zero, sizeof(int));
+            completeWrite(_fd_formula, (char*)&a, sizeof(int));
+            completeWrite(_fd_formula, (char*)&zero, sizeof(int));
         }
     }
+    // Write an empty clause to signal assumptions
+    completeWrite(_fd_formula, (char*)&zero, sizeof(int));
+    if (_incremental) {
+        // Incremental mode: 
+        // Write assumptions (without any separation zeroes)
+        completeWrite(_fd_formula, (char*)_assumptions.data(), _assumptions.size()*sizeof(int));
+    }
+    // Write an empty clause to signal end of assumptions
+    completeWrite(_fd_formula, (char*)&zero, sizeof(int));
 }
+
+void MallobIpasir::completeWrite(int fd, const char* data, int numBytes) {
+    int numWritten = 0;
+    while (numWritten < numBytes) {
+        int n = write(fd, data+numWritten, numBytes-numWritten);
+        if (n < 0) break;
+        numWritten += n;
+    }
+    if (numWritten < numBytes) {
+        std::cout << "ERROR: " << (numBytes-numWritten) << "/" << numBytes << " bytes not written!" << std::endl;
+        abort();
+    }
+}
+
+void MallobIpasir::completeRead(int fd, char* data, int numBytes) {
+    int numRead = 0;
+    while (numRead < numBytes) {
+        int n = read(fd, data+numRead, numBytes-numRead);
+        if (n <= 0) break;
+        numRead += n;
+    }
+    if (numRead < numBytes) {
+        std::cout << "ERROR: " << (numBytes-numRead) << "/" << numBytes << " bytes not read!" << std::endl;
+        abort();
+    }
+}
+
+
 
 
 // IPASIR C methods

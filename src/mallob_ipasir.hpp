@@ -54,7 +54,6 @@ private:
     std::set<int> _failed_assumptions;
 
     std::vector<std::thread> _branched_threads;
-    std::map<std::string, std::pair<std::mutex*, std::condition_variable*>> _branched_signals;
 
     std::mutex _branch_mutex;
     std::condition_variable _branch_cond_var;
@@ -69,7 +68,7 @@ public:
     void addLiteral(int lit) {
         _formula.push_back(lit);
         if (_presubmitted && _formula.size() >= 512) {
-            write(_fd_formula, _formula.data(), _formula.size()*sizeof(int));
+            completeWrite(_fd_formula, (char*)_formula.data(), _formula.size()*sizeof(int));
             _formula.clear();
         }
         if (lit == 0) {
@@ -116,7 +115,9 @@ private:
 
     void writeFormula(const std::string& file);
     void pipeFormula(const std::string& pipe);
-
+    
+    void completeWrite(int fd, const char* data, int numBytes);
+    void completeRead(int fd, char* data, int numBytes);
 };
 
 #endif

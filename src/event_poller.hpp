@@ -11,6 +11,7 @@
 #include <atomic>
 #include <shared_mutex>
 #include <assert.h>
+#include <thread>
 
 class EventPoller {
 
@@ -18,13 +19,12 @@ private:
     bool _initialized = false;
     int _fd_inotify;
     int _fd_inotify_watcher;
-    std::vector<char> _inotify_buffer;
 
     std::mutex _poll_mutex;
     std::condition_variable _poll_cond_var;
     std::map<std::string, std::atomic_int*> _job_name_to_num_pending;
 
-    std::atomic_bool _polling = false;
+    std::thread _bg_thread;
 
 public:
     EventPoller() {}
@@ -43,30 +43,22 @@ public:
             abort();
         }
 
-        size_t eventSize = sizeof(struct inotify_event);
-        size_t bufferSize = 64 * eventSize + 16;
-        _inotify_buffer.resize(bufferSize);
-
         _initialized = true;
-    }
 
-    bool initialized() const {return _initialized;}
-    
-    bool poll(const std::string& jobName) {
+        _bg_thread = std::thread([this]() {
 
-        auto lock = std::unique_lock(_poll_mutex);
-        if (!_job_name_to_num_pending.count(jobName)) {
-            _job_name_to_num_pending[jobName] = new std::atomic_int(0);
-        }
-        while (*_job_name_to_num_pending.at(jobName) <= 0) {
-            bool expected = false;
-            if (_polling.compare_exchange_strong(expected, true)) {
+            std::vector<char> _inotify_buffer;
+            size_t eventSize = sizeof(inotify_event);
+            size_t bufferSize = 64 * eventSize + 16;
+            _inotify_buffer.resize(bufferSize);
+
+            while (true) {
                 // Do polling
                 // poll for an event to occur
-                lock.unlock();
                 int len = read(_fd_inotify, _inotify_buffer.data(), _inotify_buffer.size());
-                lock.lock();
+                if (len <= 0) break;
                 // digest events
+                _poll_mutex.lock();
                 int i = 0;
                 while (i < len) {
                     // digest event
@@ -81,14 +73,29 @@ public:
                     numPending++;
                     i += sizeof(inotify_event) + event->len;
                 }
-                _polling = false;
+                _poll_mutex.unlock();
                 _poll_cond_var.notify_all();
-            } else {
-                // Otherwise: someone else is performing polling right now
-                std::cout << "wait for " << jobName << std::endl;
-                _poll_cond_var.wait(lock);
             }
+        });
+    }
+    ~EventPoller() {
+        if (_initialized) {
+            close(_fd_inotify_watcher);
+            close(_fd_inotify);
         }
+        if (_bg_thread.joinable()) _bg_thread.join();
+    }
+
+    bool initialized() const {return _initialized;}
+    
+    bool poll(const std::string& jobName) {
+
+        auto lock = std::unique_lock(_poll_mutex);
+        if (!_job_name_to_num_pending.count(jobName)) {
+            _job_name_to_num_pending[jobName] = new std::atomic_int(0);
+        }
+        _poll_cond_var.wait(lock, [&]() {return *_job_name_to_num_pending.at(jobName) > 0;});
+        (*_job_name_to_num_pending[jobName])--;
         return true;
     }
 
