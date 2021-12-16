@@ -67,7 +67,7 @@ void MallobIpasir::submitJob() {
         {"user", "ipasir"}, 
         {"name", jobName}, 
         {"application", "SAT"},
-        {"file", formulaBaseString}, 
+        {"files", {formulaBaseString}}, 
         {"priority", 1.000}, 
         {"wallclock-limit", "0"}, 
         {"cpu-limit", "0"}, 
