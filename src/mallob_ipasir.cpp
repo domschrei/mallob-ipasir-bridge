@@ -161,8 +161,25 @@ int MallobIpasir::solve() {
             }
         } else if (resultcode == 20) {
             // UNSAT
-            auto failedVec = j["result"]["solution"].get<std::vector<int>>();
-            _failed_assumptions.insert(failedVec.begin(), failedVec.end());
+            if (j["result"].contains("solution-file")) {
+
+                // Read solution from named pipe
+                auto solutionPipe = j["result"]["solution-file"].get<std::string>();
+                int fd = open(solutionPipe.c_str(), O_RDONLY);
+                int solutionSize = j["result"]["solution-size"].get<int>();
+                std::vector<int> asmpt(solutionSize);
+                std::cout << "Reading failed assumptions : " << solutionSize << " ints" << std::endl;
+                completeRead(fd, (char*)asmpt.data(), solutionSize*sizeof(int));
+                std::cout << "Read failed assumptions of size " << asmpt.size() << " ("
+                    << asmpt[0] << "," << asmpt[1] << ",...,"
+                    << asmpt[asmpt.size()-2] << "," << asmpt[asmpt.size()-1]
+                    << ")" << std::endl;
+                close(fd);
+                _failed_assumptions.insert(asmpt.begin(), asmpt.end());
+            } else {
+                auto failedVec = j["result"]["solution"].get<std::vector<int>>();
+                _failed_assumptions.insert(failedVec.begin(), failedVec.end());
+            }
         } else {
             // UNKNOWN
         }
