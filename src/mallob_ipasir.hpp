@@ -1,6 +1,5 @@
 
-#ifndef DOMPASCH_MALLOB_IPASIR_HPP
-#define DOMPASCH_MALLOB_IPASIR_HPP
+#pragma once
 
 #include <string>
 #include <vector>
@@ -9,7 +8,9 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <optional>
 
+#include "json.hpp"
 #include "event_poller.hpp"
 
 #ifndef MALLOB_BASE_DIRECTORY
@@ -46,6 +47,7 @@ private:
     int _fd_inotify = -1;
     int _fd_inotify_watcher = -1;
     std::vector<char> _inotify_buffer;
+    EventPoller::PollState _poll_state;
 
     int (*_terminate_callback) (void*) = nullptr;
     void* _terminate_data;
@@ -119,5 +121,3 @@ private:
     void completeWrite(int fd, const char* data, int numBytes);
     void completeRead(int fd, char* data, int numBytes);
 };
-
-#endif

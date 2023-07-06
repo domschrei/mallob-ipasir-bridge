@@ -14,6 +14,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/inotify.h>
+#include <optional>
 
 #include "json.hpp"
 #include "ipasir.h"
@@ -21,7 +22,7 @@
 #include "glob.hpp"
 
 // Global variable to enumerate several distinct IPASIR instances
-std::atomic_int ipasirSolverIndex = 0;
+std::atomic_int ipasirSolverIndex {0};
 
 EventPoller* MallobIpasir::_event_poller = nullptr;
 
@@ -130,7 +131,7 @@ int MallobIpasir::solve() {
             hasInterrupted = true;
         }
 
-        if (!_event_poller->poll(resultBasename)) continue;
+        while (_event_poller->poll(_poll_state) != resultBasename) continue;
 
         // Fitting event in the directory occurred: Try to parse result
         auto optJson = readJson(resultFilename);
@@ -190,7 +191,6 @@ int MallobIpasir::solve() {
 
     _revision++;
     _presubmitted = false;
-    _event_poller->unregister(resultBasename);
 
     if (_incremental) {
         _formula.clear();

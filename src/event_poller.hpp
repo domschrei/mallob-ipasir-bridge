@@ -1,7 +1,7 @@
 
 #pragma once
 
-#include <map>
+#include <set>
 #include <vector>
 #include <mutex>
 #include <condition_variable>
@@ -12,8 +12,14 @@
 #include <shared_mutex>
 #include <assert.h>
 #include <thread>
+#include <mutex>
 
 class EventPoller {
+
+public:
+    struct PollState {
+        int idx {0};
+    };
 
 private:
     bool _initialized = false;
@@ -22,7 +28,7 @@ private:
 
     std::mutex _poll_mutex;
     std::condition_variable _poll_cond_var;
-    std::map<std::string, std::atomic_int*> _job_name_to_num_pending;
+    std::vector<std::string> _incoming_event_files;
 
     std::thread _bg_thread;
 
@@ -48,8 +54,8 @@ public:
         _bg_thread = std::thread([this]() {
 
             std::vector<char> _inotify_buffer;
-            size_t eventSize = sizeof(inotify_event);
-            size_t bufferSize = 64 * eventSize + 16;
+            const size_t eventSize = sizeof(inotify_event);
+            size_t bufferSize = 32'768 * eventSize + 262'144;
             _inotify_buffer.resize(bufferSize);
 
             while (true) {
@@ -58,23 +64,18 @@ public:
                 int len = read(_fd_inotify, _inotify_buffer.data(), _inotify_buffer.size());
                 if (len <= 0) break;
                 // digest events
-                _poll_mutex.lock();
                 int i = 0;
                 while (i < len) {
                     // digest event
                     inotify_event* event = (inotify_event*) _inotify_buffer.data()+i;
                     auto eventFile = std::string(event->name);
-                    // event may be for a child solver instance
-                    if (!_job_name_to_num_pending.count(eventFile)) {
-                        _job_name_to_num_pending[eventFile] = new std::atomic_int(0);
-                    }
-                    std::cout << "digest " << eventFile << std::endl;
-                    auto& numPending = *_job_name_to_num_pending.at(eventFile);
-                    numPending++;
-                    i += sizeof(inotify_event) + event->len;
+                    _poll_mutex.lock();
+                    //std::cout << "digest " << eventFile << std::endl;
+                    _incoming_event_files.push_back(eventFile);
+                    _poll_mutex.unlock();
+                    _poll_cond_var.notify_all();
+                    i += eventSize + event->len;
                 }
-                _poll_mutex.unlock();
-                _poll_cond_var.notify_all();
             }
         });
     }
@@ -88,22 +89,11 @@ public:
 
     bool initialized() const {return _initialized;}
     
-    bool poll(const std::string& jobName) {
-
-        auto lock = std::unique_lock(_poll_mutex);
-        if (!_job_name_to_num_pending.count(jobName)) {
-            _job_name_to_num_pending[jobName] = new std::atomic_int(0);
-        }
-        _poll_cond_var.wait(lock, [&]() {return *_job_name_to_num_pending.at(jobName) > 0;});
-        (*_job_name_to_num_pending[jobName])--;
-        return true;
+    std::string poll(PollState& pollState) {
+        auto lock = std::unique_lock<std::mutex>(_poll_mutex);
+        _poll_cond_var.wait(lock, [&]() {return pollState.idx < _incoming_event_files.size();});
+        std::string filename = _incoming_event_files[pollState.idx];
+        pollState.idx++;
+        return filename;
     }
-
-    void unregister(const std::string& jobName) {
-        _poll_mutex.lock();
-        delete _job_name_to_num_pending.at(jobName); 
-        _job_name_to_num_pending.erase(jobName);
-        _poll_mutex.unlock();
-    }
-
 };
