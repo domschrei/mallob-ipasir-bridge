@@ -29,7 +29,7 @@ EventPoller* MallobIpasir::_event_poller = nullptr;
 MallobIpasir::MallobIpasir(Interface interface, bool incremental) :
         _interface(interface), _formula_transfer(NAMED_PIPE),
         _api_directory(MALLOB_BASE_DIRECTORY + std::string("/.api/jobs.") + MALLOB_API_INDEX + std::string("/")),
-        _solver_id(ipasirSolverIndex++), _incremental(incremental) {
+        _solver_id(ipasirSolverIndex.fetch_add(1)), _incremental(incremental) {
 
     std::cout << getSignature() << std::endl;
 
@@ -105,8 +105,8 @@ int MallobIpasir::solve() {
     // Wait for a response
     int resultcode = 0;
     std::string jobName = getJobName(_revision);
-    std::string resultFilename = _api_directory + "/out/ipasir." + jobName + ".json";
     std::string resultBasename = "ipasir." + jobName + ".json";
+    std::string resultFilename = _api_directory + "/out/" + resultBasename;
     bool hasInterrupted = false;
 
     while (true) {
@@ -131,7 +131,12 @@ int MallobIpasir::solve() {
             hasInterrupted = true;
         }
 
-        while (_event_poller->poll(_poll_state) != resultBasename) continue;
+        std::string foundFile;
+        while (foundFile != resultBasename) {
+            foundFile = _event_poller->poll(_poll_state);
+            std::string msg = "Found \"" + foundFile + "\"\n";
+            std::cout << msg;
+        }
 
         // Fitting event in the directory occurred: Try to parse result
         auto optJson = readJson(resultFilename);
