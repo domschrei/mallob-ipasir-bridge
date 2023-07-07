@@ -24,7 +24,7 @@
 // Global variable to enumerate several distinct IPASIR instances
 std::atomic_int ipasirSolverIndex {0};
 
-EventPoller* MallobIpasir::_event_poller = nullptr;
+//EventPoller* MallobIpasir::_event_poller = nullptr;
 
 MallobIpasir::MallobIpasir(Interface interface, bool incremental) :
         _interface(interface), _formula_transfer(NAMED_PIPE),
@@ -33,9 +33,9 @@ MallobIpasir::MallobIpasir(Interface interface, bool incremental) :
 
     std::cout << getSignature() << std::endl;
 
-    if (_event_poller == nullptr) {
-        _event_poller = new EventPoller(_api_directory + "/out/");
-    }
+    //if (_event_poller == nullptr) {
+    //    _event_poller = new EventPoller(_api_directory + "/out/");
+    //}
 }
 
 std::string MallobIpasir::getSignature() const {
@@ -73,11 +73,15 @@ void MallobIpasir::submitJob() {
         {"wallclock-limit", "0"}, 
         {"cpu-limit", "0"}, 
         {"incremental", _incremental},
-        {"content-mode", _formula_transfer == FILE ? "text" : "raw"}
+        {"content-mode", _formula_transfer == FILE ? "text" : "raw"},
+        {"piped-response", true}
     };
     if (_incremental && _revision > 0) {
         j["precursor"] = "ipasir." + getJobName(_revision-1);
     }
+
+    // Create named pipe for result JSON
+    mkfifo(getResultJsonPath().c_str(), 0777);
 
     // Submit JSON
     if (_interface == FILESYSTEM) {
@@ -104,9 +108,11 @@ int MallobIpasir::solve() {
 
     // Wait for a response
     int resultcode = 0;
-    std::string jobName = getJobName(_revision);
-    std::string resultBasename = "ipasir." + jobName + ".json";
-    std::string resultFilename = _api_directory + "/out/" + resultBasename;
+    std::string resultFilename = getResultJsonPath();
+    _json_reader = std::thread([&, resultFilename]() {
+        _result_json = readJson(resultFilename);
+        _json_read = true;
+    });
     bool hasInterrupted = false;
 
     while (true) {
@@ -117,31 +123,27 @@ int MallobIpasir::solve() {
             // Still wait for a normal answer from the job result interface.
             nlohmann::json jInterrupt = {
                 {"user", "ipasir"},
-                {"name", jobName},
+                {"name", getJobName(_revision)},
                 {"application", "SAT"},
                 {"incremental", _incremental},
                 {"interrupt", true}
             };
             if (_interface == FILESYSTEM) {
-                writeJson(jInterrupt, _api_directory + "/in/ipasir." + jobName + ".interrupt.json");
+                writeJson(jInterrupt, _api_directory + "/in/ipasir." + getJobName(_revision) + ".interrupt.json");
             } else {
                 sendJson(jInterrupt);
             }
             // Do not repeat this interrupt even if it takes a while for the job to return.
             hasInterrupted = true;
+            interruptResultJsonRead();
         }
 
-        std::string foundFile;
-        while (foundFile != resultBasename) {
-            foundFile = _event_poller->poll(_poll_state);
-            std::string msg = "Found \"" + foundFile + "\"\n";
-            std::cout << msg;
-        }
-
-        // Fitting event in the directory occurred: Try to parse result
-        auto optJson = readJson(resultFilename);
-        if (!optJson) continue;
-        auto j = std::move(optJson.value());
+        // Try to parse result
+        if (!_json_read) continue;
+        _json_reader.join();
+        _json_read = false;
+        if (!_result_json) break;
+        auto j = std::move(_result_json.value());
 
         // Success!
         resultcode = j["result"]["resultcode"];
@@ -243,14 +245,18 @@ void MallobIpasir::destruct() {
         writeJson(j, _api_directory + "/in/ipasir." + jobName + ".json");
     }
 
+    interruptResultJsonRead();
+
     // Clean up descriptors
-    if (_fd_inotify_watcher != -1) inotify_rm_watch(_fd_inotify, _fd_inotify_watcher);
-    if (_fd_inotify != -1) close(_fd_inotify);
+    //if (_fd_inotify_watcher != -1) inotify_rm_watch(_fd_inotify, _fd_inotify_watcher);
+    //if (_fd_inotify != -1) close(_fd_inotify);
 }
 
-
-
-
+void MallobIpasir::interruptResultJsonRead() {
+    std::ofstream interruptOfs(getResultJsonPath());
+    char eof = EOF;
+    interruptOfs.write(&eof, 1);
+}
 
 std::string MallobIpasir::getJobName(int revision) {
     return "job-" + std::to_string(getpid()) 
@@ -262,6 +268,12 @@ std::string MallobIpasir::getFormulaName() {
     return "/tmp/ipasir_mallob_" 
             + std::to_string(getpid()) + "_" 
             + std::to_string(_solver_id) + "_" + std::to_string(_revision);
+}
+
+std::string MallobIpasir::getResultJsonPath() {
+    std::string jobName = getJobName(_revision);
+    std::string resultBasename = "ipasir." + jobName + ".json";
+    return _api_directory + "/out/" + resultBasename;
 }
 
 void MallobIpasir::writeJson(nlohmann::json& json, const std::string& file) {

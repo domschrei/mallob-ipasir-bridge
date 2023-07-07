@@ -43,7 +43,7 @@ public:
         }
 
         _fd_inotify_watcher = inotify_add_watch(_fd_inotify, watchedDir.c_str(), 
-            (int) (IN_MOVED_TO | IN_CLOSE_WRITE));
+            (int) (IN_MOVED_TO));
         if (_fd_inotify_watcher < 0) {
             std::cout << "Fatal error: Cannot open inotify watcher!" << std::endl;
             abort();
@@ -61,19 +61,24 @@ public:
             while (true) {
                 // Do polling
                 // poll for an event to occur
-                int len = read(_fd_inotify, _inotify_buffer.data(), _inotify_buffer.size());
-                if (len <= 0) break;
+                ssize_t len = read(_fd_inotify, _inotify_buffer.data(), _inotify_buffer.size());
+                if (len <= 0) {
+                    std::cout << "Stop polling" << std::endl;
+                    break;
+                }
                 // digest events
-                int i = 0;
+                ssize_t i = 0;
                 while (i < len) {
                     // digest event
                     inotify_event* event = (inotify_event*) _inotify_buffer.data()+i;
                     auto eventFile = std::string(event->name);
-                    _poll_mutex.lock();
-                    //std::cout << "digest " << eventFile << std::endl;
-                    _incoming_event_files.push_back(eventFile);
-                    _poll_mutex.unlock();
-                    _poll_cond_var.notify_all();
+                    if (event->len > 0) {
+                        _poll_mutex.lock();
+                        //std::cout << "digest " << eventFile << std::endl;
+                        _incoming_event_files.push_back(eventFile);
+                        _poll_mutex.unlock();
+                        _poll_cond_var.notify_all();
+                    }
                     i += eventSize + event->len;
                 }
             }
@@ -91,7 +96,9 @@ public:
     
     std::string poll(PollState& pollState) {
         auto lock = std::unique_lock<std::mutex>(_poll_mutex);
-        _poll_cond_var.wait(lock, [&]() {return pollState.idx < _incoming_event_files.size();});
+        if (pollState.idx >= _incoming_event_files.size()) {
+            _poll_cond_var.wait(lock, [&]() {return pollState.idx < _incoming_event_files.size();});
+        }
         std::string filename = _incoming_event_files[pollState.idx];
         pollState.idx++;
         return filename;

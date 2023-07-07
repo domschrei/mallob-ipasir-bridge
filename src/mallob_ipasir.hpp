@@ -9,9 +9,10 @@
 #include <mutex>
 #include <condition_variable>
 #include <optional>
+#include <future>
 
 #include "json.hpp"
-#include "event_poller.hpp"
+//#include "event_poller.hpp"
 
 #ifndef MALLOB_BASE_DIRECTORY
 #define MALLOB_BASE_DIRECTORY "."
@@ -24,7 +25,7 @@
 class MallobIpasir {
 
 public:
-    static EventPoller* _event_poller;
+    //static EventPoller* _event_poller;
     enum Interface {SOCKET, FILESYSTEM};
     enum FormulaTransfer {FILE, NAMED_PIPE};
 
@@ -44,10 +45,10 @@ private:
     bool _presubmitted = false;
     int _fd_formula = -1;
 
-    int _fd_inotify = -1;
-    int _fd_inotify_watcher = -1;
-    std::vector<char> _inotify_buffer;
-    EventPoller::PollState _poll_state;
+    //int _fd_inotify = -1;
+    //int _fd_inotify_watcher = -1;
+    //std::vector<char> _inotify_buffer;
+    //EventPoller::PollState _poll_state;
 
     int (*_terminate_callback) (void*) = nullptr;
     void* _terminate_data;
@@ -61,6 +62,10 @@ private:
     std::condition_variable _branch_cond_var;
 
     int _fd_socket;
+
+    std::thread _json_reader;
+    std::optional<nlohmann::json> _result_json;
+    bool _json_read {false};
 
 public:
     MallobIpasir(Interface interface, bool incremental);
@@ -107,6 +112,7 @@ private:
 
     std::string getJobName(int revision);
     std::string getFormulaName();
+    std::string getResultJsonPath();
     
     void writeJson(nlohmann::json& json, const std::string& file);
     std::optional<nlohmann::json> readJson(const std::string& file);
@@ -114,6 +120,8 @@ private:
     void setupConnection();
     void sendJson(nlohmann::json& json);
     std::optional<nlohmann::json> receiveJson();
+
+    void interruptResultJsonRead();
 
     void writeFormula(const std::string& file);
     void pipeFormula(const std::string& pipe);
