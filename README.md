@@ -4,11 +4,7 @@ An IPASIR interface to connect applications to Mallob's incremental on-demand SA
 ## Building
 
 Execute `make`. This produces the library `libipasirmallob.a` which provides all IPASIR functions as defined in `src/ipasir.h`.
-By default, the interface will use `.api/jobs.0/` as a location of Mallob's JSON API directory (relative to the path from where the application is executed!). This can be changed at build time by supplying different values for `MALLOB_BASE_DIRECTORY` and/or `MALLOB_API_INDEX` as follows:
-```
-make MALLOB_BASE_DIRECTORY='"path/to/my/mallob"' MALLOB_API_INDEX='"5"'
-```
-This would let the interface use `path/to/my/mallob/.api/jobs.5/` as the API directory.
+The interface will select randomly among the available API paths provided by Mallob in the files `/tmp/mallob.apipath.*`.
 
 Now you can link IPASIR applications with the library file `libipasirmallob.a` to obtain an application which uses Mallob as a backend SAT solver.
 For more information on linking IPASIR applications with IPASIR solvers, see [the IPASIR Github repository](https://github.com/biotomas/ipasir).

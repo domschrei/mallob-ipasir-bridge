@@ -14,14 +14,6 @@
 #include "json.hpp"
 //#include "event_poller.hpp"
 
-#ifndef MALLOB_BASE_DIRECTORY
-#define MALLOB_BASE_DIRECTORY "."
-#endif
-
-#ifndef MALLOB_API_INDEX
-#define MALLOB_API_INDEX "0"
-#endif
-
 class MallobIpasir {
 
 public:
@@ -113,7 +105,9 @@ private:
     std::string getJobName(int revision);
     std::string getFormulaName();
     std::string getResultJsonPath();
-    
+
+    std::string drawRandomApiPath();
+
     void writeJson(nlohmann::json& json, const std::string& file);
     std::optional<nlohmann::json> readJson(const std::string& file);
     

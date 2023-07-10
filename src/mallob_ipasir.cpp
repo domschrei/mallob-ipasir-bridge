@@ -27,8 +27,7 @@ std::atomic_int ipasirSolverIndex {0};
 //EventPoller* MallobIpasir::_event_poller = nullptr;
 
 MallobIpasir::MallobIpasir(Interface interface, bool incremental) :
-        _interface(interface), _formula_transfer(NAMED_PIPE),
-        _api_directory(MALLOB_BASE_DIRECTORY + std::string("/.api/jobs.") + MALLOB_API_INDEX + std::string("/")),
+        _interface(interface), _formula_transfer(NAMED_PIPE), _api_directory(drawRandomApiPath()),
         _solver_id(ipasirSolverIndex.fetch_add(1)), _incremental(incremental) {
 
     std::cout << getSignature() << std::endl;
@@ -274,6 +273,23 @@ std::string MallobIpasir::getResultJsonPath() {
     std::string jobName = getJobName(_revision);
     std::string resultBasename = "ipasir." + jobName + ".json";
     return _api_directory + "/out/" + resultBasename;
+}
+
+std::string MallobIpasir::drawRandomApiPath() {
+    srand(getpid());
+    auto globResult = cppGlob("/tmp/mallob.apipath.*");
+    if (globResult.empty()) {
+        perror("Cannot find any API paths at /tmp/mallob.apipath.* !");
+        exit(EXIT_FAILURE);
+    }
+    auto fileContainingApiPath = globResult[rand() % globResult.size()];
+    std::string apiPath;
+    {
+        std::ifstream ifs(fileContainingApiPath);
+        std::getline(ifs, apiPath);
+    }
+    assert(!apiPath.empty());
+    return apiPath;
 }
 
 void MallobIpasir::writeJson(nlohmann::json& json, const std::string& file) {
