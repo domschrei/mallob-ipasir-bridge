@@ -282,7 +282,7 @@ std::string MallobIpasir::getJobName(int revision) {
 }
 
 std::string MallobIpasir::getFormulaName() {
-    return _tmp_dir + "/ipasir_mallob_" 
+    return _api_directory + "/ipasir_mallob_"
             + std::to_string(getpid()) + "_" 
             + std::to_string(_solver_id) + "_" + std::to_string(_revision);
 }
