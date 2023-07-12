@@ -22,6 +22,8 @@ public:
     enum FormulaTransfer {FILE, NAMED_PIPE};
 
 private:
+    std::string _tmp_dir;
+
     Interface _interface;
     FormulaTransfer _formula_transfer;
     std::string _api_directory;

@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include "timer.hpp"
 #include <set>
 #include <vector>
 #include <mutex>
@@ -38,14 +39,14 @@ public:
 
          _fd_inotify = inotify_init();
         if (_fd_inotify < 0) {
-            std::cout << "Fatal error: Cannot open inotify!" << std::endl;
+            printf("(%.3f) Fatal error: Cannot open inotify!\n", Timer::elapsedSeconds());
             abort();
         }
 
         _fd_inotify_watcher = inotify_add_watch(_fd_inotify, watchedDir.c_str(), 
             (int) (IN_MOVED_TO));
         if (_fd_inotify_watcher < 0) {
-            std::cout << "Fatal error: Cannot open inotify watcher!" << std::endl;
+            printf("(%.3f) Fatal error: Cannot open inotify watcher!\n", Timer::elapsedSeconds());
             abort();
         }
 
@@ -63,7 +64,7 @@ public:
                 // poll for an event to occur
                 ssize_t len = read(_fd_inotify, _inotify_buffer.data(), _inotify_buffer.size());
                 if (len <= 0) {
-                    std::cout << "Stop polling" << std::endl;
+                    printf("(%.3f) Stop polling\n", Timer::elapsedSeconds());
                     break;
                 }
                 // digest events
@@ -74,7 +75,6 @@ public:
                     auto eventFile = std::string(event->name);
                     if (event->len > 0) {
                         _poll_mutex.lock();
-                        //std::cout << "digest " << eventFile << std::endl;
                         _incoming_event_files.push_back(eventFile);
                         _poll_mutex.unlock();
                         _poll_cond_var.notify_all();

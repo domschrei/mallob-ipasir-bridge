@@ -1,4 +1,5 @@
 
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <functional>
@@ -20,6 +21,7 @@
 #include "ipasir.h"
 #include "mallob_ipasir.hpp"
 #include "glob.hpp"
+#include "timer.hpp"
 
 // Global variable to enumerate several distinct IPASIR instances
 std::atomic_int ipasirSolverIndex {0};
@@ -30,7 +32,18 @@ MallobIpasir::MallobIpasir(Interface interface, bool incremental) :
         _interface(interface), _formula_transfer(NAMED_PIPE), _api_directory(drawRandomApiPath()),
         _solver_id(ipasirSolverIndex.fetch_add(1)), _incremental(incremental) {
 
-    std::cout << getSignature() << std::endl;
+    Timer::init();
+    auto sig = getSignature();
+    printf("(%.3f) %s\n", Timer::elapsedSeconds(), sig.c_str());
+
+    char* tmpdirFromEnv = std::getenv("MALLOB_TMP_DIR");
+    if (tmpdirFromEnv) {
+        _tmp_dir = std::string(tmpdirFromEnv);
+    } else {
+        _tmp_dir = "/tmp";
+    }
+    printf("(%.3f) Using tmp dir %s after checking envvar MALLOB_TMP_DIR\n",
+        Timer::elapsedSeconds(), _tmp_dir.c_str());
 
     //if (_event_poller == nullptr) {
     //    _event_poller = new EventPoller(_api_directory + "/out/");
@@ -100,12 +113,14 @@ int MallobIpasir::solve() {
     }
 
     if (_formula_transfer == NAMED_PIPE) {
+        printf("(%.3f) Piping formula ...\n", Timer::elapsedSeconds());
         pipeFormula(getFormulaName());
         close(_fd_formula);
         _fd_formula = -1;
     }
 
     // Wait for a response
+    printf("(%.3f) Waiting for a response ...\n", Timer::elapsedSeconds());
     int resultcode = 0;
     std::string resultFilename = getResultJsonPath();
     _json_reader = std::thread([&, resultFilename]() {
@@ -118,6 +133,7 @@ int MallobIpasir::solve() {
 
         // Check termination / interruption
         if (!hasInterrupted && _terminate_callback != nullptr && _terminate_callback(_terminate_data) != 0) {
+            printf("(%.3f) Caught terminate signal\n", Timer::elapsedSeconds());
             // Terminate catched! Send interrupt over interface.
             // Still wait for a normal answer from the job result interface.
             nlohmann::json jInterrupt = {
@@ -156,12 +172,9 @@ int MallobIpasir::solve() {
                 int solutionSize = j["result"]["solution-size"].get<int>();
                 _model.clear();
                 _model.resize(solutionSize);
-                std::cout << "Reading solution : " << solutionSize << " ints" << std::endl;
+                printf("(%.3f) Reading solution : %i ints\n", Timer::elapsedSeconds(), solutionSize);
                 completeRead(fd, (char*)_model.data(), solutionSize*sizeof(int));
-                std::cout << "Read solution of size " << _model.size() << " ("
-                    << _model[0] << "," << _model[1] << ",...," 
-                    << _model[_model.size()-2] << "," << _model[_model.size()-1]  
-                    << ")" << std::endl;
+                printf("(%.3f) Read solution of size %lu\n", Timer::elapsedSeconds(), _model.size());
                 close(fd);
             } else {
                 _model = j["result"]["solution"].get<std::vector<int>>();
@@ -175,12 +188,9 @@ int MallobIpasir::solve() {
                 int fd = open(solutionPipe.c_str(), O_RDONLY);
                 int solutionSize = j["result"]["solution-size"].get<int>();
                 std::vector<int> asmpt(solutionSize);
-                std::cout << "Reading failed assumptions : " << solutionSize << " ints" << std::endl;
+                printf("(%.3f) Reading failed assumptions : %i ints\n", Timer::elapsedSeconds(), solutionSize);
                 completeRead(fd, (char*)asmpt.data(), solutionSize*sizeof(int));
-                std::cout << "Read failed assumptions of size " << asmpt.size() << " ("
-                    << asmpt[0] << "," << asmpt[1] << ",...,"
-                    << asmpt[asmpt.size()-2] << "," << asmpt[asmpt.size()-1]
-                    << ")" << std::endl;
+                printf("(%.3f) Read failed assumptions of size %lu\n", Timer::elapsedSeconds(), asmpt.size());
                 close(fd);
                 _failed_assumptions.insert(asmpt.begin(), asmpt.end());
             } else {
@@ -264,7 +274,7 @@ std::string MallobIpasir::getJobName(int revision) {
 }
 
 std::string MallobIpasir::getFormulaName() {
-    return "/tmp/ipasir_mallob_" 
+    return _tmp_dir + "/ipasir_mallob_" 
             + std::to_string(getpid()) + "_" 
             + std::to_string(_solver_id) + "_" + std::to_string(_revision);
 }
@@ -277,9 +287,9 @@ std::string MallobIpasir::getResultJsonPath() {
 
 std::string MallobIpasir::drawRandomApiPath() {
     srand(getpid());
-    auto globResult = cppGlob("/tmp/mallob.apipath.*");
+    auto globResult = cppGlob(_tmp_dir + "/mallob.apipath.*");
     if (globResult.empty()) {
-        perror("Cannot find any API paths at /tmp/mallob.apipath.* !");
+        printf("ERROR: Cannot find any API paths at %s/mallob.apipath.* !", _tmp_dir.c_str());
         exit(EXIT_FAILURE);
     }
     auto fileContainingApiPath = globResult[rand() % globResult.size()];
@@ -289,6 +299,7 @@ std::string MallobIpasir::drawRandomApiPath() {
         std::getline(ifs, apiPath);
     }
     assert(!apiPath.empty());
+    printf("(%.3f) Using API path %s\n", Timer::elapsedSeconds(), apiPath.c_str());
     return apiPath;
 }
 
@@ -319,14 +330,14 @@ void MallobIpasir::setupConnection() {
 	// starting a transfer.
 	//
 	// The file descriptor is marked as connected
-	printf("Connecting...\n");
+	printf("(%.3f) Connecting...\n", Timer::elapsedSeconds());
 	if (connect(_fd_socket, (sockaddr*) &address, sizeof(address)) == -1) {
-		if(errno == ECONNREFUSED) printf("ECONNREFUSED\n");
+		if(errno == ECONNREFUSED) printf("(%.3f) ECONNREFUSED\n", Timer::elapsedSeconds());
 		close(_fd_socket);
 		perror("Cannot connect");
 		exit(EXIT_FAILURE);
 	}
-	printf("Established connection with: %s\n", address.sun_path);
+	printf("(%.3f) Established connection with: %s\n", Timer::elapsedSeconds(), address.sun_path);
 
 	// Receiving
 	size_t size;
@@ -335,11 +346,11 @@ void MallobIpasir::setupConnection() {
 		memset(message, 0, MAX_MESSAGE_SIZE);
 		size = recv(_fd_socket, message, MAX_MESSAGE_SIZE, 0);
 		if(size == -1) { 
-			if (errno == ECONNRESET) printf("ECONNRESET\n");
+			if (errno == ECONNRESET) printf("(%.3f) ECONNRESET\n", Timer::elapsedSeconds());
 			close(fd);
 			perror("Receiver"); exit(EXIT_FAILURE); 
 		}
-		printf("Receive %lu B\nMessage: %s\n\n", size, message);
+		printf("(%.3f) Receive %lu B\nMessage: %s\n\n", Timer::elapsedSeconds(), size, message);
 	} while (strcmp(message, "quit") != 0);
     */
 }
@@ -351,7 +362,7 @@ std::optional<nlohmann::json> MallobIpasir::readJson(const std::string& file) {
         std::ifstream i(file);
         i >> j;
         opt.emplace(std::move(j));
-        std::cout << "Received " << file << std::endl;
+        printf("(%.3f) Received %s\n", Timer::elapsedSeconds(), file.c_str());
     } catch (...) {}
     return opt;
 }
@@ -361,9 +372,8 @@ void MallobIpasir::sendJson(nlohmann::json& json) {
 }
 
 void MallobIpasir::writeFormula(const std::string& formulaFilename) {
-    
-    std::cout << "Writing " << _num_cls << " clauses and " << _assumptions.size() 
-        << " assumptions to " << formulaFilename << std::endl;
+
+    printf("(%.3f) Writing %i clauses and %lu assumptions to %s\n", Timer::elapsedSeconds(), _num_cls, _assumptions.size(), formulaFilename.c_str());
 
     std::ofstream fOut(formulaFilename);
     int numCls = _num_cls + (_incremental ? 0 : _assumptions.size());
@@ -391,9 +401,7 @@ void MallobIpasir::writeFormula(const std::string& formulaFilename) {
 void MallobIpasir::pipeFormula(const std::string& pipeFilename) {
     int zero = 0;
 
-    std::cout << "Writing " << _num_cls << " clauses (" 
-        << _formula.size() << " lits remaining) and " 
-        << _assumptions.size() << " assumptions to " << pipeFilename << std::endl;
+    printf("(%.3f) Writing %i clauses (%lu lits remaining) and %lu assumptions to %s\n", Timer::elapsedSeconds(), _num_cls, _formula.size(), _assumptions.size(), pipeFilename.c_str());
 
     // Write (remaining) clause literals with separation zeroes
     completeWrite(_fd_formula, (char*)_formula.data(), _formula.size()*sizeof(int));
@@ -423,7 +431,7 @@ void MallobIpasir::completeWrite(int fd, const char* data, int numBytes) {
         numWritten += n;
     }
     if (numWritten < numBytes) {
-        std::cout << "ERROR: " << (numBytes-numWritten) << "/" << numBytes << " bytes not written!" << std::endl;
+        printf("(%.3f) ERROR: %i/%i bytes not written!\n", Timer::elapsedSeconds(), numBytes-numWritten, numBytes);
         abort();
     }
 }
@@ -436,7 +444,7 @@ void MallobIpasir::completeRead(int fd, char* data, int numBytes) {
         numRead += n;
     }
     if (numRead < numBytes) {
-        std::cout << "ERROR: " << (numBytes-numRead) << "/" << numBytes << " bytes not read!" << std::endl;
+        printf("(%.3f) ERROR: %i/%i bytes not read!\n", Timer::elapsedSeconds(), numBytes-numRead, numBytes);
         abort();
     }
 }
