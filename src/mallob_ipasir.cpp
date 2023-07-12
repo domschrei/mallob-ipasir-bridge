@@ -45,6 +45,11 @@ MallobIpasir::MallobIpasir(Interface interface, bool incremental) :
     printf("(%.3f) Using tmp dir %s after checking envvar MALLOB_TMP_DIR\n",
         Timer::elapsedSeconds(), _tmp_dir.c_str());
 
+    // Adjust OOM killer score to make this process "almost" the first to be killed
+    std::ofstream oomOfs("/proc/self/oom_score_adj");
+    oomOfs << "999";
+    oomOfs.close();
+
     //if (_event_poller == nullptr) {
     //    _event_poller = new EventPoller(_api_directory + "/out/");
     //}
@@ -473,6 +478,8 @@ void ipasir_set_terminate (void * solver, void * data, int (*terminate)(void * d
 
 // TODO implement?
 void ipasir_set_learn (void * solver, void * data, int max_length, void (*learn)(void * data, int32_t * clause)) {}
+
+void ipasir_set_seed (void * solver, int seed) {}
 
 // Addition to the interface: branch off a child solver on the current formulae / assumptions,
 // call the provided callback as soon as solving is done. Clears assumptions in the parent solver.

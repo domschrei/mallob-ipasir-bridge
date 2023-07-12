@@ -200,6 +200,8 @@ IPASIR_API void ipasir_set_terminate (void * solver, void * data, int (*terminat
  */
 IPASIR_API void ipasir_set_learn (void * solver, void * data, int max_length, void (*learn)(void * data, int32_t * clause));
 
+void ipasir_set_seed (void * solver, int seed);
+
 // Addition to the interface: enables to create a non-incremental solver which can then be branched
 // via mallob_ipasir_branched_solve ().
 void* mallob_ipasir_init (bool incremental);
