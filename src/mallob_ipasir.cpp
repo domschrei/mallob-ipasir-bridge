@@ -29,7 +29,7 @@ std::atomic_int ipasirSolverIndex {0};
 //EventPoller* MallobIpasir::_event_poller = nullptr;
 
 MallobIpasir::MallobIpasir(Interface interface, bool incremental) :
-        _interface(interface), _formula_transfer(NAMED_PIPE), _api_directory(drawRandomApiPath()),
+        _interface(interface), _formula_transfer(NAMED_PIPE),
         _solver_id(ipasirSolverIndex.fetch_add(1)), _incremental(incremental) {
 
     Timer::init();
@@ -44,6 +44,9 @@ MallobIpasir::MallobIpasir(Interface interface, bool incremental) :
     }
     printf("(%.3f) Using tmp dir %s after checking envvar MALLOB_TMP_DIR\n",
         Timer::elapsedSeconds(), _tmp_dir.c_str());
+
+    // Set up API directory based on what you find at the tmp dir
+    _api_directory = std::string(drawRandomApiPath());
 
     // Adjust OOM killer score to make this process "almost" the first to be killed
     std::ofstream oomOfs("/proc/self/oom_score_adj");
