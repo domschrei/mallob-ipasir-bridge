@@ -124,4 +124,6 @@ private:
     
     void completeWrite(int fd, const char* data, int numBytes);
     void completeRead(int fd, char* data, int numBytes);
+
+    std::vector<int> tokenizeDimacsLines(const std::vector<std::string>& lines);
 };

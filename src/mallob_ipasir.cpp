@@ -5,8 +5,10 @@
 #include <functional>
 #include <iostream>
 #include <atomic>
+#include <sstream>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -15,7 +17,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/inotify.h>
-#include <optional>
 
 #include "json.hpp"
 #include "ipasir.h"
@@ -185,12 +186,17 @@ int MallobIpasir::solve() {
                 printf("(%.3f) Read solution of size %lu\n", Timer::elapsedSeconds(), _model.size());
                 close(fd);
             } else {
-                _model = j["result"]["solution"].get<std::vector<int>>();
+                _model.resize(_num_vars+1, 0);
+                std::vector<std::string> dimacsModelLines = j["result"]["solution"].get<std::vector<std::string>>();
+                std::vector<int> lits = tokenizeDimacsLines(dimacsModelLines);
+                for (int lit : lits) {
+                    const int var = std::abs(lit);
+                    _model[var] = lit;
+                }
             }
         } else if (resultcode == 20) {
             // UNSAT
             if (j["result"].contains("solution-file")) {
-
                 // Read solution from named pipe
                 auto solutionPipe = j["result"]["solution-file"].get<std::string>();
                 int fd = open(solutionPipe.c_str(), O_RDONLY);
@@ -202,8 +208,9 @@ int MallobIpasir::solve() {
                 close(fd);
                 _failed_assumptions.insert(asmpt.begin(), asmpt.end());
             } else {
-                auto failedVec = j["result"]["solution"].get<std::vector<int>>();
-                _failed_assumptions.insert(failedVec.begin(), failedVec.end());
+                std::vector<std::string> dimacsFailedLines = j["result"]["solution"].get<std::vector<std::string>>();
+                std::vector<int> asmpts = tokenizeDimacsLines(dimacsFailedLines);
+                _failed_assumptions.insert(asmpts.begin(), asmpts.end());
             }
         } else {
             // UNKNOWN
@@ -455,6 +462,25 @@ void MallobIpasir::completeRead(int fd, char* data, int numBytes) {
         printf("(%.3f) ERROR: %i/%i bytes not read!\n", Timer::elapsedSeconds(), numBytes-numRead, numBytes);
         abort();
     }
+}
+
+std::vector<int> MallobIpasir::tokenizeDimacsLines(const std::vector<std::string>& lines) {
+    std::vector<int> result;
+    for (const auto& line : lines) {
+        assert(line.substr(0, 2) == "v ");
+        int pos = 2;
+        int start = 2;
+        while (pos < line.size()) {
+            while (pos < line.size() && line[pos] != ' ' && line[pos] != '\n') pos++;
+            if (pos-start > 0) {
+                const int lit = std::stoi(line.substr(start, pos-start));
+                result.push_back(lit);
+            }
+            pos++;
+            start = pos;
+        }
+    }
+    return result;
 }
 
 
